@@ -1,12 +1,13 @@
 using System.Collections;
-using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
-public class PlayerController : MonoBehaviour
+public class PlayerController : NetworkBehaviour
 {
     //for   AI
     public bool AI; //  AI ON/OFF
-    public bool Turret_Turn; //Turn ON/OFF
+
+    // public bool Turret_Turn; //Turn ON/OFF
     public Transform[] targetPointsPos; //(enemy AI) Points for positions 
     private byte sel_ltargetPointPos; //(enemy AI) selected targetPointPos in array
 
@@ -42,9 +43,9 @@ public class PlayerController : MonoBehaviour
     public Transform Barrel;
     public Transform GunEnd;
 
-    private Transform TargetForTurn;
-    private Vector3 TargetForTurnOld;
-    private float TargetForTurnTimer;
+    // private Transform TargetForTurn;
+    // private Vector3 TargetForTurnOld;
+    // private float TargetForTurnTimer;
     public float EnemyRangeFire = 50;
     public Rigidbody shell;
 
@@ -76,9 +77,6 @@ public class PlayerController : MonoBehaviour
         m_MovementAudio = GetComponent<AudioSource>();
 
         m_MovementAudio.clip = tank_idle;
-
-
-        //	m_ExplosionParticles=transform.FindChild ("Tank_Anim/TankExplosion").GetComponent<ParticleSystem> ().Play;
     }
 
 
@@ -97,28 +95,17 @@ public class PlayerController : MonoBehaviour
 
     private void Start()
     {
-        TargetForTurn = transform;
-        if (!AI)
-        {
-            TargetForTurn = GameObject.Find("TargetMouse").transform;
-        }
-        else
-        {
-            if (gameObject.tag == "Enemy") TargetForTurn = GameObject.FindGameObjectWithTag("Player").transform;
-            else TargetForTurn = GameObject.FindGameObjectWithTag("Enemy").transform;
-        }
-
         // The axes names are based on player number.
         m_MovementAxisName = "Vertical";
         m_TurnAxisName = "Horizontal";
 
-        // Store the original pitch of the audio source.
         m_OriginalPitch = m_MovementAudio.pitch;
     }
 
 
     private void Update()
     {
+        if (!IsOwner) return;
         if (m_dead)
             return;
 
@@ -140,66 +127,43 @@ public class PlayerController : MonoBehaviour
                 Barrel.transform.localPosition.z);
         }
 
-        //////////////// for Enemy AI //////////////// begin
-        if (AI)
-        {
-            if (targetPointsPos.Length > 0)
-            {
-                var heading = transform.position - targetPointsPos[sel_ltargetPointPos].position;
 
-
-                //move forward
-                //heading.y = 0;  // This is the overground heading.
-                if (heading.sqrMagnitude > 100)
-                {
-                    //if the target is far move otherwise stand
-                    if (m_MovementInputValue < 1)
-                        m_MovementInputValue += 0.01f;
-                    //turn towards  
-                    Vector3 targetDir = targetPointsPos[sel_ltargetPointPos].position - transform.position;
-                    float step = 5.5f * Time.deltaTime;
-                    Vector3 newDir = Vector3.RotateTowards(transform.forward, targetDir, step, 0.0F);
-                    newDir.y = 0;
-                    transform.rotation = Quaternion.LookRotation(newDir);
-                }
-                else if (m_MovementInputValue > 0)
-                    m_MovementInputValue -= 0.01f;
-                else
-                {
-                    //The tank got to the target, choose another target position for movement
-                    m_MovementInputValue = 0;
-                    if (targetPointsPos.Length > 1)
-                        if (sel_ltargetPointPos < targetPointsPos.Length - 1)
-                            sel_ltargetPointPos++;
-                        else
-                            sel_ltargetPointPos = 0;
-                }
-            }
-        }
-        //////////////// for Enemy AI //////////////// end
-        else
-        {
-            // Store the value of both input axes.
-            m_MovementInputValue = Input.GetAxis(m_MovementAxisName);
-            m_TurnInputValue = Input.GetAxis(m_TurnAxisName);
-        }
+        // Store the value of both input axes.
+        m_MovementInputValue = Input.GetAxis(m_MovementAxisName);
+        m_TurnInputValue = Input.GetAxis(m_TurnAxisName);
 
         EngineAudio();
 
         if (animDo != "Idle" && m_MovementInputValue == 0 && m_TurnInputValue == 0)
         {
             animDo = "Idle";
-            if (!Turret_Turn) animator.SetBool("Idle1", true);
-            else animator.SetBool("Idle" + (int)Random.Range(1, 4), true);
+            animator.SetBool("Idle" + (int)Random.Range(1, 4), true);
         }
 
-        var dist = TargetForTurnOld - TargetForTurn.position;
-        if (dist.sqrMagnitude > 0.01) TargetForTurnTimer = 0;
-        else TargetForTurnTimer += 1;
-
-        TargetForTurnOld = TargetForTurn.position;
+        if (Input.GetButtonDown("Fire2"))
+        {
+            GameObject sphereGameObject = Instantiate(spherePrefab, transform.position + Vector3.up * 10, Quaternion.identity);
+            NetworkObject networkObject = sphereGameObject.GetComponent<NetworkObject>();
+            Debug.Log(networkObject);
+            networkObject.Spawn(true);
+        }
     }
 
+    private void FixedUpdate()
+    {
+        if (!IsOwner) return;
+        if (m_dead)
+        {
+            Vector3 pos = transform.position;
+            pos.y -= 0.002f;
+            transform.position = pos;
+            return;
+        }
+
+        // Adjust the rigidbodies position and orientation in FixedUpdate.
+        Move();
+        Turn();
+    }
 
     private void EngineAudio()
     {
@@ -212,21 +176,6 @@ public class PlayerController : MonoBehaviour
         else
             m_MovementAudio.pitch = 1 + Mathf.Abs(m_MovementInputValue);
     }
-
-
-    private void FixedUpdate()
-    {
-        if (m_dead)
-        {
-            transform.position = new Vector3(transform.position.x, transform.position.y - 0.002f, transform.position.z);
-            return;
-        }
-
-        // Adjust the rigidbodies position and orientation in FixedUpdate.
-        Move();
-        Turn();
-    }
-
 
     private void Move()
     {
@@ -297,23 +246,23 @@ public class PlayerController : MonoBehaviour
     //Collider col = Physics.OverlapBox(enemyCheck.position, 0.6f, LayerEnemy);
     void OnTriggerEnter(Collider col)
     {
-        if (m_dead) return;
-        if (col.gameObject.tag == "Shell")
-        {
-            SCT_Shell shell = col.GetComponent<SCT_Shell>();
-            Damage(shell.shellDamage);
-
-            if (currentHealth > 0)
-            {
-                var a = (int)Random.Range(1, 5);
-                if (a == 1) animator.SetBool("HitLeft", true);
-                if (a == 2) animator.SetBool("HitRight", true);
-                if (a == 3) animator.SetBool("HitForw", true);
-                if (a == 4) animator.SetBool("HitBack", true);
-                if (a == 5) animator.SetBool("HitStrong", true);
-                animDo = "Hit";
-            }
-        }
+        // if (m_dead) return;
+        // if (col.gameObject.tag == "Shell")
+        // {
+        //     SCT_Shell shell = col.GetComponent<SCT_Shell>();
+        //     Damage(shell.shellDamage);
+        //
+        //     if (currentHealth > 0)
+        //     {
+        //         var a = (int)Random.Range(1, 5);
+        //         if (a == 1) animator.SetBool("HitLeft", true);
+        //         if (a == 2) animator.SetBool("HitRight", true);
+        //         if (a == 3) animator.SetBool("HitForw", true);
+        //         if (a == 4) animator.SetBool("HitBack", true);
+        //         if (a == 5) animator.SetBool("HitStrong", true);
+        //         animDo = "Hit";
+        //     }
+        // }
     }
 
 
@@ -349,52 +298,17 @@ public class PlayerController : MonoBehaviour
     void LateUpdate()
     {
         if (m_dead) return;
-        //////////////// for Enemy AI //////////////// begin
-        if (AI)
-        {
-            if (TargetForTurn.gameObject.tag == "Respawn")
-                return;
-
-            var heading = Turret.transform.position - TargetForTurn.position;
-            if (heading.sqrMagnitude < EnemyRangeFire && heading.sqrMagnitude > 1)
-            {
-                //if the enemy tank is far move otherwise stand
-                EnemyFire = true;
-            }
-        }
-        //////////////// for Enemy AI //////////////// end
-        //turn head for mouse
-
-        if (Turret_Turn)
-        {
-            if (TargetForTurn)
-                if (TargetForTurnTimer < 300)
-                {
-                    Vector3 targetDir = TargetForTurn.position - Turret.transform.position;
-                    Vector3 newDir = Vector3.RotateTowards(Turret.transform.forward, targetDir, 1, 0.0F);
-
-                    target = Quaternion.LookRotation(newDir);
-
-                    Turret.transform.rotation = Quaternion.Euler(-90, target.eulerAngles.y, 0);
-                }
-                else if (TargetForTurnTimer < 400)
-                {
-                    Turret.transform.rotation = Quaternion.RotateTowards(Turret.transform.rotation,
-                        Quaternion.Euler(-90, transform.eulerAngles.y, 0), 4f);
-                }
-        }
-        else
-        {
-            //	Turret.transform.rotation = transform.rotation;
-            Turret.transform.rotation = Quaternion.Euler(transform.eulerAngles.x - 90, transform.eulerAngles.y,
-                transform.eulerAngles.z);
-        }
+        Turret.transform.rotation = Quaternion.Euler(transform.eulerAngles.x - 90, transform.eulerAngles.y,
+            transform.eulerAngles.z);
     }
+
+    [SerializeField] private GameObject spherePrefab;
 
     void Fire() //shot
     {
         Rigidbody shellInstance = Instantiate(shell, GunEnd.position, Turret.rotation) as Rigidbody;
         shellInstance.velocity = speedShell * -Turret.transform.up;
+        shellInstance.GetComponent<NetworkObject>().Spawn(true);
     }
 
     private IEnumerator HideTank()
