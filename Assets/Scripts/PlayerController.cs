@@ -100,6 +100,8 @@ public class PlayerController : NetworkBehaviour
         m_TurnAxisName = "Horizontal";
 
         m_OriginalPitch = m_MovementAudio.pitch;
+
+        name = GetInstanceID() + "_" + NetworkBehaviourId + "_" + OwnerClientId;
     }
 
 
@@ -139,14 +141,6 @@ public class PlayerController : NetworkBehaviour
             animDo = "Idle";
             animator.SetBool("Idle" + (int)Random.Range(1, 4), true);
         }
-
-        if (Input.GetButtonDown("Fire2"))
-        {
-            GameObject sphereGameObject = Instantiate(spherePrefab, transform.position + Vector3.up * 10, Quaternion.identity);
-            NetworkObject networkObject = sphereGameObject.GetComponent<NetworkObject>();
-            Debug.Log(networkObject);
-            networkObject.Spawn(true);
-        }
     }
 
     private void FixedUpdate()
@@ -184,6 +178,7 @@ public class PlayerController : NetworkBehaviour
 
         // Apply this movement to the rigidbody's position.
         m_Rigidbody.MovePosition(m_Rigidbody.position + movement);
+
         if (m_TurnInputValue == 0)
             if (m_MovementInputValue > 0)
             {
@@ -243,6 +238,7 @@ public class PlayerController : NetworkBehaviour
         }
     }
 
+
     //Collider col = Physics.OverlapBox(enemyCheck.position, 0.6f, LayerEnemy);
     void OnTriggerEnter(Collider col)
     {
@@ -264,7 +260,6 @@ public class PlayerController : NetworkBehaviour
         //     }
         // }
     }
-
 
     public void Damage(int damageAmount)
     {
@@ -306,9 +301,24 @@ public class PlayerController : NetworkBehaviour
 
     void Fire() //shot
     {
+        UpdateHpClientRpc(updateVal * 2 + (int)OwnerClientId);
+        SpawnBulletServerRpc();
+    }
+
+    private int updateVal = 0;
+
+    [ServerRpc]
+    void SpawnBulletServerRpc()
+    {
         Rigidbody shellInstance = Instantiate(shell, GunEnd.position, Turret.rotation) as Rigidbody;
-        shellInstance.velocity = speedShell * -Turret.transform.up;
-        shellInstance.GetComponent<NetworkObject>().Spawn(true);
+        shellInstance.GetComponent<NetworkObject>().Spawn();
+    }
+
+
+    [ClientRpc]
+    void UpdateHpClientRpc(int value)
+    {
+        UIManager.Instance.SetStatus($"Call from {OwnerClientId} - {updateVal}");
     }
 
     private IEnumerator HideTank()

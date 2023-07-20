@@ -1,14 +1,18 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 //this script is for the  shell
 public class SCT_Shell : MonoBehaviour
 {
+    [SerializeField] private Rigidbody rb;
     public float lifeTime = 2.0f;
     public int shellDamage = 10;
     public ParticleSystem m_ExplosionParticles; // Reference to the particles that will play on explosion.
     public AudioSource m_ExplosionAudio;
+
+   
 
     void OnTriggerEnter(Collider col)
     {
